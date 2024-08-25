@@ -8,13 +8,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import SGDRegressor
 from sklearn.ensemble import RandomForestRegressor
 from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-# Funciones de procesamiento de datos
 def load_and_preprocess_data(file_path):
     df = pd.read_csv(file_path, encoding='utf-8')
     df.rename(columns={'Month': 'MES', 'CVE PRODUCTO': 'PRODUCTO', 'LBS': 'cantidad_vendida'}, inplace=True)
@@ -30,7 +29,6 @@ def filter_products(df, min_samples=12):
     productos_validos = [producto for producto in productos if len(df[df['PRODUCTO'] == producto]) >= min_samples]
     return productos_validos
 
-# Funciones de preparación de datos para modelos
 def prepare_data_lstm(df, producto, look_back=12):
     df_producto = df[df['PRODUCTO'] == producto].sort_values(by='FECHA')
     data = df_producto['cantidad_vendida'].values
@@ -63,7 +61,6 @@ def prepare_data_ml(df, producto, look_back=12):
     y = np.array(y)
     return X, y
 
-# Funciones de construcción de modelos
 def build_lstm_model(input_shape):
     model = Sequential()
     model.add(LSTM(50, activation='relu', input_shape=input_shape, return_sequences=True))
@@ -74,7 +71,6 @@ def build_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-# Función principal de análisis
 def analyze_products(df_filtrado, productos_validos):
     resultados_predicciones = pd.DataFrame(columns=['PRODUCTO', 'DESCRIPCION', 'Fecha', 'Valor', 'CONV/ORG'])
     total_productos = len(productos_validos)
@@ -102,7 +98,7 @@ def analyze_products(df_filtrado, productos_validos):
             mse_lstm = mean_squared_error(y_test_lstm, y_pred_lstm)
             
             print(f"Evaluando modelo de Regresión Lineal para el producto {producto}...")
-            model_lr = LinearRegression()
+            model_lr = SGDRegressor(max_iter=1000, tol=1e-3)
             model_lr.fit(X_train_ml, y_train_ml)
             y_pred_lr = model_lr.predict(X_test_ml)
             mse_lr = mean_squared_error(y_test_ml, y_pred_lr)
@@ -164,12 +160,10 @@ def analyze_products(df_filtrado, productos_validos):
     
     return resultados_predicciones
 
-# Función para guardar resultados
 def save_results(resultados_predicciones, output_file_path):
     resultados_predicciones.to_excel(output_file_path, index=False)
     print(f"Predicciones guardadas en {output_file_path}.")
 
-# Función para pivotear y guardar el DataFrame
 def pivot_and_save(df, output_file_path):
     df['Fecha'] = pd.to_datetime(df['Fecha'])
     df['Mes'] = df['Fecha'].dt.strftime('%Y-%m')
@@ -179,15 +173,40 @@ def pivot_and_save(df, output_file_path):
     df_pivot.to_excel(output_file_path, index=False)
     print(f"DataFrame pivoteado guardado en {output_file_path}.")
 
-# Ruta del archivo
-file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\historial ventas.csv'
+    
+
+def update_model_with_new_data(historical_file_path, new_data_file_path):
+    # Cargar datos históricos y nuevos datos
+    df_historical = pd.read_csv(historical_file_path, encoding='utf-8')
+    df_new_data = pd.read_csv(new_data_file_path, encoding='utf-8')
+    
+    # Mostrar la secuencia de datos leídos
+    print("Datos históricos leídos:")
+    print(df_historical.head())
+    print("\nNuevos datos leídos:")
+    print(df_new_data.head())
+    
+    # Concatenar los datos
+    df_combined = pd.concat([df_historical, df_new_data]).drop_duplicates().reset_index(drop=True)
+    
+    # Guardar el archivo actualizado
+    df_combined.to_csv(historical_file_path, index=False, encoding='utf-8')
+    print(f"Archivo histórico actualizado con nuevos datos y guardado en {historical_file_path}.")
+    
+    return df_combined
+
+# Rutas de archivos
+historical_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\historial ventas.csv'
+new_data_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\historial ventas actualizado.csv'
 output_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\predicciones_ventas.xlsx'
 pivot_output_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\predicciones_ventas_pivoteado.xlsx'
 
+# Actualizar el modelo con nuevos datos
+df_combined = update_model_with_new_data(historical_file_path, new_data_file_path)
+
 # Ejecución del flujo de trabajo
-df_filtrado = load_and_preprocess_data(file_path)
+df_filtrado = load_and_preprocess_data(historical_file_path)
 productos_validos = filter_products(df_filtrado, min_samples=12)
-#productos_validos = productos_validos[:10]  # Limitar a 10 productos para análisis rápido
 resultados_predicciones = analyze_products(df_filtrado, productos_validos)
 save_results(resultados_predicciones, output_file_path)
 
