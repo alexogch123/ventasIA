@@ -173,26 +173,27 @@ def pivot_and_save(df, output_file_path):
     df_pivot.to_excel(output_file_path, index=False)
     print(f"DataFrame pivoteado guardado en {output_file_path}.")
 
-    
-
 def update_model_with_new_data(historical_file_path, new_data_file_path):
     # Cargar datos históricos y nuevos datos
     df_historical = pd.read_csv(historical_file_path, encoding='utf-8')
     df_new_data = pd.read_csv(new_data_file_path, encoding='utf-8')
-    
+
     # Mostrar la secuencia de datos leídos
     print("Datos históricos leídos:")
     print(df_historical.head())
     print("\nNuevos datos leídos:")
     print(df_new_data.head())
-    
+
     # Concatenar los datos
     df_combined = pd.concat([df_historical, df_new_data]).drop_duplicates().reset_index(drop=True)
+
+    # Eliminar los registros cuyo valor de la columna LBS sea cero
+    df_combined = df_combined[df_combined['LBS'] != 0]
     
     # Guardar el archivo actualizado
     df_combined.to_csv(historical_file_path, index=False, encoding='utf-8')
     print(f"Archivo histórico actualizado con nuevos datos y guardado en {historical_file_path}.")
-    
+
     return df_combined
 
 # Rutas de archivos
