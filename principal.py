@@ -97,6 +97,7 @@ def analyze_products(df_filtrado, productos_validos, num_to_analyze):
             conv_org = df_filtrado[df_filtrado['PRODUCTO'] == producto]['CONV/ORG'].iloc[0]
             print(f"Analizando producto {i}/{num_to_analyze} ({(i/num_to_analyze)*100:.2f}%): {producto} - {descripcion}")
             
+            # Preparar datos (funciones no incluidas en este fragmento)
             X_lstm, y_lstm, scaler = prepare_data_lstm(df_filtrado, producto)
             X_ml, y_ml = prepare_data_ml(df_filtrado, producto)
             
@@ -169,6 +170,18 @@ def analyze_products(df_filtrado, productos_validos, num_to_analyze):
             resultados_predicciones = pd.concat([resultados_predicciones, predicciones_df])
             
             print(f"Predicciones generadas y almacenadas para el producto {producto}.")
+            
+            # Crear y mostrar la tabla pivoteada
+            print(f"\nANALIZANDO EL PRODUCTO....\nCVE PRODUCTO: {producto}\nDESCRIPCION: {descripcion}\n")
+            resultados_predicciones['Fecha'] = pd.to_datetime(resultados_predicciones['Fecha'])
+            resultados_predicciones['Año'] = resultados_predicciones['Fecha'].dt.year
+            resultados_predicciones['Mes'] = resultados_predicciones['Fecha'].dt.month
+            meses_ordenados = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+            resultados_predicciones['Mes'] = resultados_predicciones['Mes'].apply(lambda x: meses_ordenados[x-1])
+            resultados_predicciones['Mes'] = pd.Categorical(resultados_predicciones['Mes'], categories=meses_ordenados, ordered=True)
+            pivot_table = resultados_predicciones.pivot_table(index='Mes', columns='Año', values='Valor', aggfunc='sum')
+            pivot_table = pivot_table.fillna(0).applymap(lambda x: f"{x:,.2f}")
+            print(pivot_table)
         
         except Exception as e:
             productos_invalidos.append((producto, descripcion, f"Error procesando el producto: {str(e)}"))
