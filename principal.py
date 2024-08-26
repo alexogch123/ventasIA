@@ -26,8 +26,20 @@ def load_and_preprocess_data(file_path):
 
 def filter_products(df, min_samples=12):
     productos = df['PRODUCTO'].unique()
-    productos_validos = [producto for producto in productos if len(df[df['PRODUCTO'] == producto]) >= min_samples]
-    return productos_validos
+    productos_validos = []
+    productos_invalidos = []
+
+    for producto in productos:
+        df_producto = df[df['PRODUCTO'] == producto]
+        descripcion = df_producto['DESCRIPCION'].iloc[0]
+        if df_producto['cantidad_vendida'].sum() == 0:
+            productos_invalidos.append((producto, descripcion, 'No hubo ventas en el año anterior'))
+        elif len(df_producto) < min_samples:
+            productos_invalidos.append((producto, descripcion, 'No hay suficientes datos para el análisis'))
+        else:
+            productos_validos.append(producto)
+
+    return productos_validos, productos_invalidos
 
 def prepare_data_lstm(df, producto, look_back=12):
     df_producto = df[df['PRODUCTO'] == producto].sort_values(by='FECHA')
@@ -71,21 +83,25 @@ def build_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-def analyze_products(df_filtrado, productos_validos):
+def analyze_products(df_filtrado, productos_validos, num_to_analyze):
     resultados_predicciones = pd.DataFrame(columns=['PRODUCTO', 'DESCRIPCION', 'Fecha', 'Valor', 'CONV/ORG'])
+    productos_invalidos = []
     total_productos = len(productos_validos)
     print(f"Total de productos a analizar: {total_productos}\n")
+
+    productos_validos = productos_validos[:num_to_analyze]
 
     for i, producto in enumerate(productos_validos, 1):
         try:
             descripcion = df_filtrado[df_filtrado['PRODUCTO'] == producto]['DESCRIPCION'].iloc[0]
             conv_org = df_filtrado[df_filtrado['PRODUCTO'] == producto]['CONV/ORG'].iloc[0]
-            print(f"Analizando producto {i}/{total_productos} ({(i/total_productos)*100:.2f}%): {producto} - {descripcion}")
+            print(f"Analizando producto {i}/{num_to_analyze} ({(i/num_to_analyze)*100:.2f}%): {producto} - {descripcion}")
             
             X_lstm, y_lstm, scaler = prepare_data_lstm(df_filtrado, producto)
             X_ml, y_ml = prepare_data_ml(df_filtrado, producto)
             
             if X_lstm is None or y_lstm is None or X_ml is None or y_ml is None:
+                productos_invalidos.append((producto, descripcion, 'No hay suficientes datos para el análisis'))
                 continue
             
             X_train_lstm, X_test_lstm, y_train_lstm, y_test_lstm = train_test_split(X_lstm, y_lstm, test_size=0.2, random_state=42)
@@ -155,10 +171,10 @@ def analyze_products(df_filtrado, productos_validos):
             print(f"Predicciones generadas y almacenadas para el producto {producto}.")
         
         except Exception as e:
-            print(f"Error procesando el producto {producto}: {str(e)}")
+            productos_invalidos.append((producto, descripcion, f"Error procesando el producto: {str(e)}"))
             continue
     
-    return resultados_predicciones
+    return resultados_predicciones, productos_invalidos
 
 def save_results(resultados_predicciones, output_file_path):
     resultados_predicciones.to_excel(output_file_path, index=False)
@@ -196,20 +212,85 @@ def update_model_with_new_data(historical_file_path, new_data_file_path):
 
     return df_combined
 
+def save_invalid_products(productos_invalidos, invalid_output_file_path):
+    df_invalidos = pd.DataFrame(productos_invalidos, columns=['PRODUCTO', 'DESCRIPCION', 'RAZON'])
+    df_invalidos.to_excel(invalid_output_file_path, index=False)
+    print(f"Productos no válidos guardados en {invalid_output_file_path}.")
+
+def get_number_of_products_to_analyze(total_products):
+    while True:
+        try:
+            num_to_analyze = input(f"Hay un total de {total_products} productos. ¿Cuántos productos desea analizar? (Presione Enter para analizar todos): ")
+            if num_to_analyze.strip() == "":
+                return total_products
+            num_to_analyze = int(num_to_analyze)
+            if num_to_analyze > 0 and num_to_analyze <= total_products:
+                return num_to_analyze
+            else:
+                print(f"Por favor, ingrese un número entre 1 y {total_products}.")
+        except ValueError:
+            print("Entrada no válida. Por favor, ingrese un número.")
+
+def get_product_key():
+    while True:
+        product_key = input("Ingrese la clave del producto (CVE PRODUCTO) que desea analizar: ").strip()
+        if product_key:
+            return product_key
+        else:
+            print("Entrada no válida. Por favor, ingrese una clave de producto válida.")
+
+def menu():
+    print("Seleccione una opción:")
+    print("1. Hacer la proyección de un item en particular")
+    print("2. Analizar el total de los items")
+    print("3. Analizar un número específico de items")
+    while True:
+        try:
+            option = int(input("Ingrese el número de la opción deseada: "))
+            if option in [1, 2, 3]:
+                return option
+            else:
+                print("Opción no válida. Por favor, ingrese 1, 2 o 3.")
+        except ValueError:
+            print("Entrada no válida. Por favor, ingrese un número.")
+
 # Rutas de archivos
 historical_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\historial ventas.csv'
 new_data_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\historial ventas actualizado.csv'
 output_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\predicciones_ventas.xlsx'
 pivot_output_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\predicciones_ventas_pivoteado.xlsx'
+invalid_output_file_path = r'C:\Users\agomez\OneDrive - MarBran SA de CV\1.4 ANALISIS VENTAS IA\productos_invalidos.xlsx'
 
 # Actualizar el modelo con nuevos datos
 df_combined = update_model_with_new_data(historical_file_path, new_data_file_path)
 
 # Ejecución del flujo de trabajo
 df_filtrado = load_and_preprocess_data(historical_file_path)
-productos_validos = filter_products(df_filtrado, min_samples=12)
-resultados_predicciones = analyze_products(df_filtrado, productos_validos)
-save_results(resultados_predicciones, output_file_path)
+productos_validos, productos_invalidos = filter_products(df_filtrado, min_samples=12)
+
+# Mostrar menú y obtener opción del usuario
+option = menu()
+
+if option == 1:
+    product_key = get_product_key()
+    if product_key in productos_validos:
+        resultados_predicciones, productos_invalidos_analisis = analyze_products(df_filtrado, [product_key], 1)
+        productos_invalidos.extend(productos_invalidos_analisis)
+        save_results(resultados_predicciones, output_file_path)
+        save_invalid_products(productos_invalidos, invalid_output_file_path)
+    else:
+        print(f"El producto con clave {product_key} no es válido o no tiene suficientes datos para el análisis.")
+elif option == 2:
+    resultados_predicciones, productos_invalidos_analisis = analyze_products(df_filtrado, productos_validos, len(productos_validos))
+    productos_invalidos.extend(productos_invalidos_analisis)
+    save_results(resultados_predicciones, output_file_path)
+    save_invalid_products(productos_invalidos, invalid_output_file_path)
+elif option == 3:
+    num_to_analyze = get_number_of_products_to_analyze(len(productos_validos))
+    resultados_predicciones, productos_invalidos_analisis = analyze_products(df_filtrado, productos_validos, num_to_analyze)
+    productos_invalidos.extend(productos_invalidos_analisis)
+    save_results(resultados_predicciones, output_file_path)
+    save_invalid_products(productos_invalidos, invalid_output_file_path)
 
 # Leer el archivo de Excel y pivotear
 df = pd.read_excel(output_file_path)
